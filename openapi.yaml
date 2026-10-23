@@ -1,0 +1,1612 @@
+openapi: 3.0.3
+info:
+  title: CameraHub Marketplace MVP API
+  version: 2.1.0
+  description: PostgreSQL-backed contract. All payment, payout and refund operations are simulated in MVP. Operation
+    IDs are stable identifiers.
+servers:
+- url: http://localhost:8080
+security:
+- bearerAuth: []
+tags:
+- name: Auth
+- name: Catalog
+- name: Seller
+- name: Admin
+- name: Inspection
+- name: Orders
+- name: Shipping
+- name: Disputes
+- name: AI
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      required:
+      - code
+      - message
+      - correlationId
+      properties:
+        code:
+          type: string
+          example: PRODUCT_UNAVAILABLE
+        message:
+          type: string
+        correlationId:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    ProductCreate:
+      type: object
+      required:
+      - modelId
+      - title
+      - priceVnd
+      - description
+      - conditionNotes
+      - mediaKeys
+      properties:
+        modelId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 5
+        priceVnd:
+          type: integer
+          format: int64
+          minimum: 1
+        description:
+          type: string
+        conditionNotes:
+          type: string
+        serialNumber:
+          type: string
+        shutterCount:
+          type: integer
+          minimum: 0
+        repairHistory:
+          type: string
+        accessories:
+          type: string
+        mediaKeys:
+          type: array
+          minItems: 1
+          items:
+            type: string
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sellerId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        priceVnd:
+          type: integer
+          format: int64
+        listingStatus:
+          type: string
+        inspectionBadge:
+          type: string
+        version:
+          type: integer
+    AgreementProposal:
+      type: object
+      required:
+      - buyerSharePct
+      - sellerSharePct
+      - expectedVersion
+      properties:
+        buyerSharePct:
+          type: integer
+          minimum: 0
+          maximum: 100
+        sellerSharePct:
+          type: integer
+          minimum: 0
+          maximum: 100
+        expectedVersion:
+          type: integer
+          minimum: 0
+        note:
+          type: string
+      description: Shares must sum to 100. Seller-only request must have buyerSharePct=0.
+    InspectionRequestCreate:
+      type: object
+      required:
+      - productId
+      properties:
+        productId:
+          type: string
+          format: uuid
+        buyerId:
+          type: string
+          format: uuid
+          nullable: true
+        note:
+          type: string
+      description: Seller or identified buyer can initiate. Service quote is set by trusted admin, not client.
+    ChecklistUpdate:
+      type: object
+      required:
+      - results
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required:
+            - checkCode
+            - result
+            properties:
+              checkCode:
+                type: string
+              result:
+                type: string
+                enum:
+                - PASS
+                - FAIL
+                - WARNING
+                - NOT_TESTED
+              notes:
+                type: string
+              evidenceStorageKey:
+                type: string
+    OrderCreate:
+      type: object
+      required:
+      - productId
+      - shippingAddressId
+      - shippingQuoteId
+      - idempotencyKey
+      properties:
+        productId:
+          type: string
+          format: uuid
+        shippingAddressId:
+          type: string
+          format: uuid
+        shippingQuoteId:
+          type: string
+          format: uuid
+        idempotencyKey:
+          type: string
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        orderStatus:
+          type: string
+        agreedPriceVnd:
+          type: integer
+          format: int64
+        shippingFeeVnd:
+          type: integer
+          format: int64
+        transactionFeeVnd:
+          type: integer
+          example: 0
+        totalVnd:
+          type: integer
+          format: int64
+        paymentDeadline:
+          type: string
+          format: date-time
+    ShipmentCreate:
+      type: object
+      required:
+      - providerCode
+      properties:
+        providerCode:
+          type: string
+          enum:
+          - MOCK
+    ShippingQuoteCreate:
+      type: object
+      required:
+      - productId
+      - shippingAddressId
+      properties:
+        productId:
+          type: string
+          format: uuid
+        shippingAddressId:
+          type: string
+          format: uuid
+    DisputeCreate:
+      type: object
+      required:
+      - reasonCode
+      - description
+      properties:
+        reasonCode:
+          type: string
+          enum:
+          - NOT_AS_DESCRIBED
+          - DEFECT
+          - MISSING_ACCESSORIES
+          - WRONG_ITEM
+          - NOT_RECEIVED
+          - OTHER
+        description:
+          type: string
+          minLength: 10
+        evidenceKeys:
+          type: array
+          items:
+            type: string
+    DisputeDecision:
+      type: object
+      required:
+      - decisionType
+      - reason
+      properties:
+        decisionType:
+          type: string
+          enum:
+          - RELEASE
+          - FULL_REFUND
+          - PARTIAL_REFUND
+          - MORE_EVIDENCE
+        reason:
+          type: string
+        refundAmountVnd:
+          type: integer
+          format: int64
+          minimum: 0
+    AIRecommendationRequest:
+      type: object
+      required:
+      - budgetMaxVnd
+      - purposes
+      properties:
+        budgetMinVnd:
+          type: integer
+          minimum: 0
+        budgetMaxVnd:
+          type: integer
+          minimum: 1
+        purposes:
+          type: array
+          items:
+            type: string
+        experienceLevel:
+          type: string
+          enum:
+          - BEGINNER
+          - INTERMEDIATE
+          - ADVANCED
+        brandIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+paths:
+  /api/auth/register:
+    post:
+      tags:
+      - Auth
+      operationId: register
+      summary: Register user
+      responses:
+        '201':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      security: []
+  /api/auth/login:
+    post:
+      tags:
+      - Auth
+      operationId: login
+      summary: Obtain access token
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      security: []
+  /api/products:
+    get:
+      tags:
+      - Catalog
+      operationId: searchProducts
+      summary: Search published available products
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      security: []
+      parameters:
+      - name: q
+        in: query
+        schema:
+          type: string
+      - name: brandId
+        in: query
+        schema:
+          type: string
+      - name: modelId
+        in: query
+        schema:
+          type: string
+      - name: maxPriceVnd
+        in: query
+        schema:
+          type: integer
+      - name: inspectionBadge
+        in: query
+        schema:
+          type: string
+      - name: page
+        in: query
+        schema:
+          type: integer
+      - name: size
+        in: query
+        schema:
+          type: integer
+  /api/products/{id}:
+    get:
+      tags:
+      - Catalog
+      operationId: getProduct
+      summary: Product details
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      security: []
+  /api/seller/products:
+    post:
+      tags:
+      - Seller
+      operationId: createProduct
+      summary: Create draft listing
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreate'
+  /api/seller/products/{id}:
+    patch:
+      tags:
+      - Seller
+      operationId: updateProduct
+      summary: Update own listing; requires If-Match version
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreate'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: integer
+  /api/seller/products/{id}/submit:
+    post:
+      tags:
+      - Seller
+      operationId: submitProduct
+      summary: Submit own listing
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/seller/products/{id}/hide:
+    post:
+      tags:
+      - Seller
+      operationId: hideProduct
+      summary: Hide own listing
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/admin/products/{id}/approve:
+    post:
+      tags:
+      - Admin
+      operationId: approveProduct
+      summary: Approve listing
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/admin/products/{id}/reject:
+    post:
+      tags:
+      - Admin
+      operationId: rejectProduct
+      summary: Reject listing
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/inspections:
+    post:
+      tags:
+      - Inspection
+      operationId: requestInspection
+      summary: Open inspection request; no duplicate active request
+      responses:
+        '201':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InspectionRequestCreate'
+  /api/admin/inspections/{id}/quote:
+    post:
+      tags:
+      - Inspection
+      operationId: quoteInspection
+      summary: Set inspection fee by authorized admin
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/inspections/{id}/agreements:
+    post:
+      tags:
+      - Inspection
+      operationId: proposeInspectionAgreement
+      summary: Propose percentage split
+      responses:
+        '201':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgreementProposal'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/inspections/{id}/agreements/{agreementId}/accept:
+    post:
+      tags:
+      - Inspection
+      operationId: acceptInspectionAgreement
+      summary: Opposite party accepts fee proposal; only one accepted version
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: agreementId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/inspections/{id}/agreements/{agreementId}/reject:
+    post:
+      tags:
+      - Inspection
+      operationId: rejectInspectionAgreement
+      summary: Reject fee proposal; sales remain allowed
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: agreementId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/inspections/{id}/cancel:
+    post:
+      tags:
+      - Inspection
+      operationId: cancelInspection
+      summary: Cancel inspection without cancelling listing or order
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/admin/inspections/{id}/assign:
+    post:
+      tags:
+      - Inspection
+      operationId: assignInspector
+      summary: Assign authorized inspector
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/inspector/inspections/{id}/checklist:
+    put:
+      tags:
+      - Inspection
+      operationId: updateChecklist
+      summary: Update checklist in open inspection
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChecklistUpdate'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/inspector/inspections/{id}/complete:
+    post:
+      tags:
+      - Inspection
+      operationId: completeInspection
+      summary: Issue immutable inspection report and certification result
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/inspection-reports/{id}:
+    get:
+      tags:
+      - Inspection
+      operationId: getReport
+      summary: Public redacted inspection report, no private serial
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      security: []
+  /api/shipping/quotes:
+    post:
+      tags:
+      - Shipping
+      operationId: getQuote
+      summary: Calculate mock shipping quote paid by buyer
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShippingQuoteCreate'
+  /api/orders:
+    post:
+      tags:
+      - Orders
+      operationId: createOrder
+      summary: Atomically reserve product and create one-item order
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreate'
+  /api/orders/{id}:
+    get:
+      tags:
+      - Orders
+      operationId: getOrder
+      summary: Get order visible to party or admin
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/orders/{id}/simulate-payment:
+    post:
+      tags:
+      - Orders
+      operationId: simulatePayment
+      summary: Mark payment simulated; use Idempotency-Key header
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+  /api/seller/orders/{id}/confirm:
+    post:
+      tags:
+      - Orders
+      operationId: confirmOrder
+      summary: Seller confirms paid order
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/orders/{id}/cancel:
+    post:
+      tags:
+      - Orders
+      operationId: cancelOrder
+      summary: Cancel if state allows; simulated refund as necessary
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/seller/orders/{id}/shipments:
+    post:
+      tags:
+      - Shipping
+      operationId: createShipment
+      summary: Create mock shipment; one current shipment
+      responses:
+        '201':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShipmentCreate'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/orders/{id}/shipments:
+    get:
+      tags:
+      - Shipping
+      operationId: listShipments
+      summary: Read shipment tracking
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/mock-shipping/shipments/{id}/events:
+    post:
+      tags:
+      - Shipping
+      operationId: simulateShippingEvent
+      summary: 'Dev/test ONLY: inject shipping event; disabled in production'
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/buyer/orders/{id}/confirm-received:
+    post:
+      tags:
+      - Orders
+      operationId: confirmReceived
+      summary: Buyer confirms physical receipt; starts 48h only after delivered
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/orders/{id}/protection:
+    get:
+      tags:
+      - Orders
+      operationId: getProtection
+      summary: Read authoritative 48-hour protection period
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/orders/{id}/disputes:
+    post:
+      tags:
+      - Disputes
+      operationId: createDispute
+      summary: Open dispute and atomically hold simulated payout when eligible
+      responses:
+        '201':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisputeCreate'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/disputes/{id}/evidence:
+    post:
+      tags:
+      - Disputes
+      operationId: addEvidence
+      summary: Append evidence
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/disputes/{id}/seller-response:
+    post:
+      tags:
+      - Disputes
+      operationId: sellerRespond
+      summary: Respond to dispute
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/admin/disputes/{id}/decide:
+    post:
+      tags:
+      - Disputes
+      operationId: decideDispute
+      summary: Decision then idempotent simulated release/refund
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisputeDecision'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/admin/dashboard:
+    get:
+      tags:
+      - Admin
+      operationId: getDashboard
+      summary: 'Metrics: GMV distinct from revenue'
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+  /api/ai/recommendations:
+    post:
+      tags:
+      - AI
+      operationId: recommend
+      summary: Recommend only published available DB products; AI never certifies
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AIRecommendationRequest'
+  /api/me/notifications:
+    get:
+      tags:
+      - Auth
+      operationId: getNotifications
+      summary: Read notifications
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
+  /api/admin/audit-logs:
+    get:
+      tags:
+      - Admin
+      operationId: getAuditLogs
+      summary: Read immutable audit log
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '409':
+          description: Business conflict
+        '422':
+          description: State transition rejected
