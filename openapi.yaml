@@ -864,8 +864,9 @@ paths:
     post:
       tags:
       - Inspection
-      operationId: assignInspector
-      summary: Assign authorized inspector
+      operationId: assignInspectionAdmin
+      summary: Assign an administrator to the inspection
+      x-allowed-roles: [ADMIN]
       responses:
         '200':
           description: Success
@@ -892,12 +893,13 @@ paths:
         schema:
           type: string
           format: uuid
-  /api/inspector/inspections/{id}/checklist:
+  /api/admin/inspections/{id}/checklist:
     put:
       tags:
       - Inspection
       operationId: updateChecklist
       summary: Update checklist in open inspection
+      x-allowed-roles: [ADMIN]
       responses:
         '200':
           description: Success
@@ -930,12 +932,13 @@ paths:
         schema:
           type: string
           format: uuid
-  /api/inspector/inspections/{id}/complete:
+  /api/admin/inspections/{id}/complete:
     post:
       tags:
       - Inspection
       operationId: completeInspection
       summary: Issue immutable inspection report and certification result
+      x-allowed-roles: [ADMIN]
       responses:
         '200':
           description: Success

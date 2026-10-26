@@ -3,6 +3,7 @@
 ## Files
 - `001_full_schema.sql`: **fresh install only**, PostgreSQL 16+, `camerahub` schema, 43 tables, foreign keys, checks, partial unique indexes, indexes, and minimal seeds.
 - `ERD.md`: component ERD (Mermaid) and relations.
+- `002_remove_inspector_role.sql`: remove the retired inspection role without deleting accounts or historical reports. Application permissions are USER and ADMIN; legacy BUYER/SELLER storage codes remain compatible.
 
 ## Business rules adopted
 - Buyer can purchase at listed price or accepted negotiated offer; buyer/seller conversation is linked to a single product.
@@ -17,6 +18,7 @@
 ```
 createdb camerahub_dev
 psql -v ON_ERROR_STOP=1 -d camerahub_dev -f 001_full_schema.sql
+psql -v ON_ERROR_STOP=1 --single-transaction -d camerahub_dev -f 002_remove_inspector_role.sql
 ```
 `pgcrypto` extension creation requires sufficient DB permissions. Make sure your PostgreSQL user has `CREATE` privileges; or have your database administrator enable the extension.
 
